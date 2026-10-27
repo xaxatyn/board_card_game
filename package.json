@@ -4,11 +4,14 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "game-server": "node --experimental-strip-types src/server.mjs",
+    "test:game": "node --test src/lib/durak.test.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint"
   },
   "dependencies": {
+    "boardgame.io": "^0.50.2",
     "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0"

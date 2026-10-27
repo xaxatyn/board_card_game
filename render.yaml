@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: durak-game-server
+    runtime: node
+    plan: free
+    buildCommand: npm ci
+    startCommand: npm run game-server
+    envVars:
+      - key: NODE_VERSION
+        value: 22.18.0
+      - key: CLIENT_ORIGIN
+        value: https://durak-app.onrender.com
+
+  - type: web
+    name: durak-app
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm run build
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 22.18.0
+      - key: NEXT_PUBLIC_GAME_SERVER_URL
+        value: https://durak-game-server.onrender.com
