@@ -1,6 +1,8 @@
 @import "tailwindcss";
 
+/* Базовая палитра, разделяемая всеми экранами приложения. */
 :root {
+  /* Цвета названы по роли в интерфейсе, чтобы менять тему в одном месте. */
   --ink: #20211d;
   --muted: #8e9084;
   --line: #e8e8df;
@@ -13,6 +15,7 @@
 
 * { box-sizing: border-box; }
 
+/* Глобальная типографика и безопасный контур клавиатурного фокуса. */
 body {
   margin: 0;
   background: var(--paper);
@@ -22,12 +25,17 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+/* Элементы управления наследуют шрифт страницы; фокус виден при навигации
+   клавиатурой, но не навязывает рамку при обычном клике мышью. */
 button, input, select { font: inherit; }
 button { color: inherit; }
 button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px solid #ba9b63; outline-offset: 3px; }
 
 .app-shell { min-height: 100vh; }
+
+/* Общие элементы шапки и выбора языка. */
 .topbar {
+  /* Горизонтальная шапка содержит бренд и переключатель языка. */
   height: 74px;
   border-bottom: 1px solid var(--line);
   padding: 0 max(5.2vw, 24px);
@@ -52,6 +60,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .language-switch button { background: transparent; border: 0; border-radius: 14px; padding: 6px 9px; color: #85867c; font-size: 10px; cursor: pointer; }
 .language-switch button.active { background: var(--green); color: white; }
 
+/* Стартовый экран: форма комнаты, список ролей и нижняя строка. */
 .setup-screen, .game-screen { max-width: 1380px; margin: 0 auto; padding: 0 5.2vw; }
 .setup-intro { text-align: center; padding: 55px 0 28px; }
 .eyebrow { display: flex; justify-content: center; align-items: center; gap: 10px; color: #86877c; font-size: 9px; letter-spacing: .2em; }
@@ -60,6 +69,8 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .setup-intro p { margin: 0; color: #77786d; font-size: 13px; letter-spacing: .02em; }
 .intro-rule { display: flex; align-items: center; justify-content: center; gap: 10px; margin-top: 18px; color: var(--green); font-size: 12px; }
 .intro-rule i { width: 22px; height: 1px; background: #d9d9ce; }
+/* Карточка настройки ограничивает ширину формы и визуально отделяет её
+   от фона; внутри находятся имя, места, роли и создание комнаты. */
 .setup-card { max-width: 650px; margin: 0 auto; padding: 27px 32px 22px; background: #fff; border: 1px solid #e8e8df; box-shadow: 0 14px 45px #29291a0a; }
 .setup-card-header { display: flex; align-items: center; justify-content: space-between; padding-bottom: 20px; border-bottom: 1px solid var(--line); }
 .section-kicker { display: block; color: #999a8e; font-size: 9px; font-weight: 700; letter-spacing: .18em; }
@@ -92,11 +103,13 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .role-chip small { display: block; margin-top: 8px; color: #898a7f; font-size: 9px; line-height: 1.45; }
 .site-footer { display: flex; align-items: center; justify-content: space-between; min-height: 49px; border-top: 1px solid var(--line); color: #a2a396; font-size: 8px; letter-spacing: .14em; }
 
+/* Основная игровая раскладка: сведения о партии, стол и рука игрока. */
 .game-screen { padding-top: 35px; }
 .game-heading { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
 .game-heading h1 { margin: 6px 0 0; font: 400 30px Georgia, serif; }
 .ghost-button { border: 1px solid var(--line); background: #fff; padding: 9px 13px; color: #6e7066; cursor: pointer; font-size: 12px; }
 .ghost-button span { margin-left: 6px; }
+/* Игровой интерфейс делится на фиксированную сводку и гибкое поле стола. */
 .game-layout { display: grid; grid-template-columns: 225px minmax(0, 1fr); gap: 18px; min-height: 630px; }
 .side-panel { padding: 18px 16px; border: 1px solid var(--line); background: #fff; }
 .panel-caption { display: flex; align-items: center; justify-content: space-between; color: #96978b; font-size: 9px; font-weight: 700; letter-spacing: .15em; }
@@ -134,7 +147,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .move-history li small { display: block; padding: 3px 0 0 19px; color: #85877c; font-size: 9px; }
 .move-history .move-history-empty { padding-left: 0; border-bottom: 0; list-style: none; }
 
+/* Игровой стол и расположение участников вокруг него. */
 .table-column { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
+/* Игровой стол — позиционирующая область для мест игроков и центральных карт. */
 .felt-table { position: relative; min-height: 405px; overflow: hidden; border: 1px solid #294b3b; background: #214838; box-shadow: inset 0 0 0 6px #1e4234, inset 0 0 0 7px #56715c; color: #fff; }
 .felt-texture { position: absolute; z-index: 0; inset: 8px; pointer-events: none; opacity: .12; background-image: radial-gradient(ellipse at 50% 45%, transparent 35%, #101b15 100%); }
 .table-stamp { position: absolute; z-index: 1; top: 21px; left: 0; right: 0; text-align: center; color: #dce4d8; font-size: 8px; letter-spacing: .22em; opacity: .42; }
@@ -174,6 +189,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .trump-indicator { position: absolute; z-index: 2; right: 22px; bottom: 17px; display: flex; align-items: center; gap: 8px; color: #d7e1d3; font-size: 8px; letter-spacing: .1em; text-transform: uppercase; }
 .trump-indicator b { color: #fff; font: 19px Georgia, serif; }
 
+/* Общие визуальные состояния карт, действий, руки и модальных окон. */
 .playing-card { position: relative; width: 62px; height: 88px; flex: 0 0 auto; display: flex; flex-direction: row; align-items: flex-start; justify-content: flex-start; padding: 5px; border: 1px solid #5da98a; border-radius: 7px; background: #fff; color: #397052; box-shadow: 0 3px 9px #141c1433; text-align: left; }
 .card-rank { font: 16px Georgia, "Times New Roman", serif; line-height: 1; }
 .card-suit { font: 17px Georgia, "Times New Roman", serif; line-height: 1; }
@@ -183,6 +199,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .playing-card--small { width: 54px; height: 76px; }
 .playing-card--small .card-rank { font-size: 14px; }
 .playing-card--small .card-suit { font-size: 15px; }
+/* Панель руки остаётся отдельной от стола и содержит ряд игровых кнопок. */
 .hand-panel { padding: 16px 19px 13px; border: 1px solid var(--line); background: #fff; }
 .hand-heading { display: flex; justify-content: space-between; align-items: center; }
 .hand-heading h2 { margin: 4px 0 0; font: 18px Georgia, serif; }
@@ -204,6 +221,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .game-notice { min-height: 14px; margin: 9px 0 0; color: #98998f; font-size: 9px; }
 .empty-hand, .discard-empty { color: #a6a79d; }
 
+/* Backdrop перекрывает страницу для окон способностей и результата партии. */
 .modal-backdrop { position: fixed; z-index: 20; inset: 0; display: grid; place-items: center; padding: 20px; background: #151d18b3; backdrop-filter: blur(3px); }
 .ability-modal, .result-modal { position: relative; width: min(100%, 460px); padding: 30px; background: #fff; box-shadow: 0 20px 80px #0003; }
 .ability-modal h2, .result-modal h2 { margin: 8px 0 17px; font: 26px Georgia, serif; }
@@ -220,7 +238,9 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .result-modal h2 { margin-bottom: 2px; }
 .result-modal p { margin: 0 0 23px; color: #898a7f; font-size: 11px; }
 
+/* На средних экранах уменьшаем боковую панель и карты на столе. */
 @media (max-width: 900px) {
+  /* На планшете сохраняются две колонки, но они становятся компактнее. */
   .game-layout { grid-template-columns: 190px minmax(0, 1fr); }
   .side-panel { padding: 15px 11px; }
   .seat-0 { left: 4%; }
@@ -230,7 +250,10 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .playing-card { width: 55px; height: 79px; }
   .battle-cards { gap: 5px; }
 }
+/* На телефонах столы и списки переходят в одноколоночную компоновку. */
 @media (max-width: 680px) {
+  /* Мобильная версия перестраивает игровую панель вертикально и уменьшает
+     карты, кнопки и отступы для узкого экрана. */
   .topbar { height: 63px; padding: 0 18px; }
   .online-indicator, .top-separator, .language-label { display: none; }
   .setup-screen, .game-screen { padding-right: 17px; padding-left: 17px; }
@@ -275,6 +298,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
   .ability-action { margin-left: auto; }
 }
 
+/* Стили онлайн-лобби, ожидания игроков и состояния соединения. */
 .online-setup-card { max-width: 690px; }
 .setup-card-header p { margin: 6px 0 0; color: #929388; font-size: 11px; }
 .field-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 18px 0 8px; }

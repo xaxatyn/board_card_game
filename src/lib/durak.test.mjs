@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { Durak } from "./durak.mts";
 
+// Небольшие фабрики создают тестовые карты, игроков и минимальное состояние
+// партии, чтобы сценарии проверяли ходы без запуска настоящего сервера.
 const card = (suit, label, rank) => ({ id: `${suit}-${label}`, suit, label, rank });
 const emptyPlayer = (id, role = "paladin", hand = []) => ({
   id,
@@ -40,7 +42,10 @@ const makeState = (players, overrides = {}) => ({
 });
 const events = { endTurn: ({ next } = {}) => next };
 
+// Раздача сохраняет весь состав 52-карточной колоды; варвар получает 8 карт.
 test("deals a 52-card deck and gives the barbarian eight cards", () => {
+  // Подменяем перемешивание тождественной функцией, чтобы проверка раздачи
+  // была повторяемой и не зависела от случайности.
   const state = Durak.setup(
     { ctx: { numPlayers: 3 }, random: { Shuffle: (cards) => cards } },
     { slots: [
@@ -54,6 +59,8 @@ test("deals a 52-card deck and gives the barbarian eight cards", () => {
   assert.equal(state.deck.length + state.players.reduce((sum, player) => sum + player.hand.length, 0), 52);
 });
 
+// Атака может состоять только из карт одного ранга и не должна удалять
+// карты из руки, если ход содержит недопустимый набор.
 test("starts an attack with multiple same-rank cards and rejects mixed ranks", () => {
   const hand = [card("♥", "3", 3), card("♦", "3", 3), card("♣", "4", 4)];
   const state = makeState([
@@ -63,6 +70,7 @@ test("starts an attack with multiple same-rank cards and rejects mixed ranks", (
     emptyPlayer(3, "paladin", [card("♣", "8", 8)]),
   ]);
   Durak.moves.startAttack({ G: state, playerID: "0", events }, ["♥-3", "♦-3"]);
+  // Проверяем одновременно содержимое стола, порядок карт и оставшуюся руку.
   assert.equal(state.table.length, 2);
   assert.deepEqual(state.table.map(({ card: played }) => played.rank), [3, 3]);
   assert.equal(state.players[0].hand.length, 1);
@@ -74,10 +82,12 @@ test("starts an attack with multiple same-rank cards and rejects mixed ranks", (
     emptyPlayer(2, "paladin", [card("♥", "7", 7)]),
   ]);
   Durak.moves.startAttack({ G: invalid, playerID: "0", events }, ["♥-3", "♣-4"]);
+  // Недопустимый ход должен быть проигнорирован без побочных изменений.
   assert.equal(invalid.table.length, 0);
   assert.equal(invalid.players[0].hand.length, 3);
 });
 
+// Защитник сам выбирает конкретную карту атаки для каждой защиты.
 test("lets the defender choose which attack card a defense beats", () => {
   const attacks = [
     { card: card("♦", "6", 6) },
@@ -96,11 +106,13 @@ test("lets the defender choose which attack card a defense beats", () => {
     maxAttackCards: 2,
   });
   Durak.moves.defendWith({ G: state, playerID: "1" }, defense.id, attacks[1].card.id);
+  // Защита должна попасть только на указанную пару, не на первую карту стола.
   assert.equal(state.table[0].defense, undefined);
   assert.equal(state.table[1].defense.id, defense.id);
   assert.equal(state.phase, "defend");
 });
 
+// Проверяем завершение раунда, особые места для подкидывания и переводы.
 test("after taking cards, the next player after the defender becomes attacker", () => {
   const state = makeState([
     emptyPlayer(0, "paladin", [card("♥", "4", 4)]),
@@ -116,6 +128,7 @@ test("after taking cards, the next player after the defender becomes attacker", 
     maxAttackCards: 1,
   });
   Durak.moves.takeCards({ G: state, playerID: "1", events });
+  // Счётчик руки и роли следующего раунда должны быть согласованы.
   assert.equal(state.players[1].handCount, 1);
   assert.equal(state.attacker, 2);
   assert.equal(state.current, 2);
@@ -144,6 +157,8 @@ test("only the two active seats next to the defender can throw in", () => {
     defender: 1,
   });
   Durak.moves.startAttack({ G: state, playerID: "0", events }, ["♥-8"]);
+  // Игроки по сторонам защитника проходят по одному, после чего ход
+  // возвращается к защитнику для выбора защиты.
   assert.equal(state.current, 0);
   Durak.moves.passThrowIn({ G: state, playerID: "0", events });
   assert.equal(state.current, 2);
@@ -167,6 +182,8 @@ test("a transfer can return an eligible player with no cards", () => {
     maxAttackCards: 1,
   });
   Durak.moves.transfer({ G: state, playerID: "1", events }, "♥-6");
+  // Перевод назначает пусторукого игрока защитником; взяв карты,
+  // он использует один из разрешённых возвратов.
   assert.equal(state.defender, 2);
   assert.equal(state.table.length, 2);
   assert.equal(state.phase, "defend");
@@ -219,6 +236,7 @@ test("a barbarian or a player with two returns cannot be transferred back", () =
   assert.equal(exhaustedGame.defender, 0);
 });
 
+// Проверяем изоляцию закрытой информации и ограничение целей способности вора.
 test("the thief sees only their offer and can steal a selected offered card", () => {
   const stolen = card("♦", "9", 9);
   const state = makeState([
@@ -229,6 +247,7 @@ test("the thief sees only their offer and can steal a selected offered card", ()
   Durak.moves.useThief({ G: state, playerID: "0", random }, 1);
   const thiefView = Durak.playerView({ G: state, playerID: "0" });
   const opponentView = Durak.playerView({ G: state, playerID: "1" });
+  // Сравниваем представления разных игроков: выборка доступна только Вору.
   assert.equal(thiefView.thiefReveal.length, 2);
   assert.equal(opponentView.thiefReveal.length, 0);
   assert.equal(opponentView.players[0].hand.length, 0);
@@ -254,6 +273,8 @@ test("the thief cannot target a player with one card and may decline an offer", 
   assert.deepEqual(state.thiefReveal, []);
 });
 
+// Отдельный этап подкидывания открывается после отбивания, а отмена защиты
+// возвращает карту владельцу до фактического завершения раунда.
 test("defense opens a throw-in window that accepts any rank already on the table", () => {
   const state = makeState([
     emptyPlayer(0, "paladin", [card("♦", "7", 7)]),
@@ -268,6 +289,8 @@ test("defense opens a throw-in window that accepts any rank already on the table
     maxAttackCards: 3,
   });
   Durak.moves.defendWith({ G: state, playerID: "1", events }, "♥-7", "♥-5");
+  // После полного отбивания открывается дополнительное окно, в котором
+  // можно подкинуть номинал карты защиты.
   assert.equal(state.phase, "throw-in");
   assert.equal(state.current, 0);
   Durak.moves.throwIn({ G: state, playerID: "0", events }, ["♦-7"]);
@@ -291,6 +314,7 @@ test("the defender can undo a defense before finishing the round", () => {
     maxAttackCards: 1,
   });
   Durak.moves.undoDefense({ G: state, playerID: "1" }, "♥-6");
+  // Отмена снимает карту из пары и возвращает её в руку защитника.
   assert.equal(state.phase, "defend");
   assert.equal(state.table[0].defense, undefined);
   assert.deepEqual(state.players[1].hand, [defense]);
@@ -316,6 +340,7 @@ test("when an attacker runs out of cards, a successful defense starts with the d
   assert.equal(state.current, 1);
 });
 
+// Проверяем механику возврата карт из отбоя и нестандартное отбивание Реверса.
 test("the necromancer can recover only one of the last six discard cards", () => {
   const player = emptyPlayer(0, "necromancer", []);
   const discard = Array.from({ length: 7 }, (_, index) => card("♣", String(index + 2), index + 2));
@@ -324,6 +349,7 @@ test("the necromancer can recover only one of the last six discard cards", () =>
   const latest = discard[6].id;
   const state = makeState([player, emptyPlayer(1)], { discard });
   Durak.moves.useNecromancer({ G: state, playerID: "0" }, oldest);
+  // Самая старая из семи карт недоступна, последняя из стопки — доступна.
   assert.equal(player.hand.length, 0);
   Durak.moves.useNecromancer({ G: state, playerID: "0" }, latest);
   assert.deepEqual(player.hand.map((item) => item.id), [latest]);

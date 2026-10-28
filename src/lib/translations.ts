@@ -1,7 +1,11 @@
 export type Language = "ru" | "en";
 
+// Здесь собраны все видимые подписи приложения на двух языках.
+// Интерфейс выбирает объект целиком; одинаковая структура ru/en
+// проверяется типом Translation ниже.
 export const translations = {
   ru: {
+    // Название проекта и тексты стартового экрана.
     gameName: "Подземелье и дураки!",
     gameTagline: "Переводной · Подкидной · По вашим правилам",
     newGame: "Новая игра",
@@ -21,6 +25,7 @@ export const translations = {
     yourName: "Ваше имя",
     human: "Игрок",
     computer: "Компьютер",
+    // Тексты создания и подключения к многопользовательской комнате.
     waitingRoom: "Ожидание игроков",
     roomCodeLabel: "Код для друзей",
     copyCode: "Скопировать код",
@@ -33,6 +38,7 @@ export const translations = {
     connectionLost: "Связь с сервером потеряна. Переподключаемся…",
     roomNotFound: "Комната больше не существует. Создайте новую или введите действующий код.",
     copyFailed: "Не удалось скопировать код комнаты.",
+    // Подписи основных игровых действий и подсказки для текущей фазы.
     attackCards: "Атаковать выбранными картами",
     throwInCards: "Подкинуть выбранные карты",
     skipThrowIn: "Пас",
@@ -46,6 +52,7 @@ export const translations = {
     thief: "Вор",
     necromancer: "Некромант",
     reverse: "Реверс",
+    // Краткие объяснения способностей, отображаемые в настройке ролей.
     roleDescriptions: {
       paladin: "Следующий по порядку игрок не может подкидывать Паладину.",
       barbarian: "Получает 8 карт. Если вышел из игры, вернуть его нельзя.",
@@ -53,7 +60,8 @@ export const translations = {
       necromancer: "До 5 раз за игру: выбрать одну из 6 последних карт отбоя.",
       reverse: "Может отбивать карты меньшим номиналом той же масти.",
     },
-    table: "Игровой стол",
+      // Термины игрового стола: колода, отбой, ход, атака и защита.
+      table: "Игровой стол",
     deck: "Колода",
     discard: "Отбой",
     trump: "Козырь",
@@ -77,12 +85,14 @@ export const translations = {
     nextPlayer: "Следующий",
     cards: "карт",
     timesLeft: "осталось",
+    // Элементы управления способностями и окна выбора карт.
     useAbility: "Способность",
     steal: "Выбрать соперника",
     chooseCard: "Выберите карту, чтобы забрать",
     chooseDiscard: "Выберите карту из отбоя",
     close: "Закрыть",
     declineSteal: "Не брать карту",
+    // История ходов и описания действий в журнале.
     gameHistory: "История ходов",
     emptyHistory: "Ходов пока нет",
     logAttack: "атакует",
@@ -94,6 +104,7 @@ export const translations = {
     logPass: "пасует",
     logSteal: "забирает карту у",
     logRecover: "возвращает карту из отбоя",
+    // Результат партии, возвраты и уведомления об исходе действий.
     youWin: "Вы выиграли!",
     loser: "Проигравший",
     gameOver: "Игра окончена",
@@ -116,6 +127,7 @@ export const translations = {
     round: "Раунд",
     returnLabel: "возвр.",
     selectedTarget: "Выберите игрока",
+    // Общие вспомогательные подписи и режим выбора языка.
     roleShort: {
       paladin: "Паладин",
       barbarian: "Варвар",
@@ -129,6 +141,7 @@ export const translations = {
     language: "Язык",
   },
   en: {
+    // Название проекта и тексты стартового экрана.
     gameName: "Dungeon and Durak!",
     gameTagline: "Transfer · Throw-in · Your house rules",
     newGame: "New game",
@@ -148,6 +161,7 @@ export const translations = {
     yourName: "Your name",
     human: "Human",
     computer: "Computer",
+    // Тексты создания и подключения к многопользовательской комнате.
     waitingRoom: "Waiting for players",
     roomCodeLabel: "Share this room code",
     copyCode: "Copy code",
@@ -160,6 +174,7 @@ export const translations = {
     connectionLost: "Connection lost. Reconnecting…",
     roomNotFound: "This room no longer exists. Create a new one or enter a valid code.",
     copyFailed: "Could not copy the room code.",
+    // Подписи основных игровых действий и подсказки для текущей фазы.
     attackCards: "Attack with selected cards",
     throwInCards: "Throw in selected cards",
     skipThrowIn: "Pass",
@@ -173,6 +188,7 @@ export const translations = {
     thief: "Thief",
     necromancer: "Necromancer",
     reverse: "Reverse",
+    // Краткие объяснения способностей, отображаемые в настройке ролей.
     roleDescriptions: {
       paladin: "The next player in turn order cannot throw cards onto the Paladin.",
       barbarian: "Starts with 8 cards. Once out, cannot return to the game.",
@@ -180,7 +196,8 @@ export const translations = {
       necromancer: "Up to 5 times: choose one of the last 6 discard cards.",
       reverse: "Can beat cards with a lower rank of the same suit.",
     },
-    table: "Game table",
+      // Термины игрового стола: колода, отбой, ход, атака и защита.
+      table: "Game table",
     deck: "Deck",
     discard: "Discard",
     trump: "Trump",
@@ -204,12 +221,14 @@ export const translations = {
     nextPlayer: "Next",
     cards: "cards",
     timesLeft: "left",
+    // Элементы управления способностями и окна выбора карт.
     useAbility: "Ability",
     steal: "Choose an opponent",
     chooseCard: "Choose a card to take",
     chooseDiscard: "Choose a card from discard",
     close: "Close",
     declineSteal: "Don't take a card",
+    // История ходов и описания действий в журнале.
     gameHistory: "Move history",
     emptyHistory: "No moves yet",
     logAttack: "attacks",
@@ -221,6 +240,7 @@ export const translations = {
     logPass: "passes",
     logSteal: "steals from",
     logRecover: "recovers a card from the discard",
+    // Результат партии, возвраты и уведомления об исходе действий.
     youWin: "You win!",
     loser: "Last player",
     gameOver: "Game over",
@@ -243,6 +263,7 @@ export const translations = {
     round: "Round",
     returnLabel: "returns",
     selectedTarget: "Choose a player",
+    // Общие вспомогательные подписи и режим выбора языка.
     roleShort: {
       paladin: "Paladin",
       barbarian: "Barbarian",
@@ -259,6 +280,8 @@ export const translations = {
 
 export type TranslationKey = keyof typeof translations.ru;
 
+// Расширяет строковые литералы до string, сохраняя вложенную форму объекта.
+// Благодаря этому перевод можно передавать в компоненты без потери типов.
 type Widen<T> = T extends string
   ? string
   : T extends object

@@ -1,5 +1,7 @@
 "use client";
 
+// Страница интерактивна: здесь используются состояние React, браузерное
+// хранилище, события управления и WebSocket-клиент boardgame.io.
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
 import { Client as CoreClient, LobbyClient } from "boardgame.io/client";
@@ -11,32 +13,46 @@ import type { Card, DurakState, DurakRole, DurakSetupData, GameLogEntry, Suit } 
 import { translations } from "@/lib/translations";
 import type { Language, Translation } from "@/lib/translations";
 
+// Короткий псевдоним снижает шум типов в пропсах компонентов и переводах.
 type T = Translation;
+// Для каждого места-бота сохраняются выданные Lobby API credentials:
+// без них boardgame.io не позволит этому клиенту отправлять ходы.
 type BotSeat = { id: number; credentials: string };
 type RoomConnection = {
+  // Данные подключения нужны для восстановления комнаты после перезагрузки.
   matchID: string;
   playerID: string;
   credentials: string;
+  // slots задают роли, botSeats — только боты, которыми управляет хозяин.
   slots: DurakSetupData["slots"];
   botSeats: BotSeat[];
   isHost: boolean;
   numPlayers: number;
 };
+// Lobby API возвращает имя и состояние подключения каждого места.
 type RoomPlayer = { id: number; name?: string; isConnected?: boolean };
 type RoomMetadata = { matchID: string; players: RoomPlayer[] };
+// Приложение использует три больших экрана; переходы выполняются сменой state.
 type Screen = "setup" | "waiting" | "game";
 type GameBoardProps = BoardProps<DurakState> & {
+  // Собственные параметры UI передаются вместе с игровыми пропсами boardgame.io.
   translations: T;
   roomCode: string;
   onReturnHome: () => void;
 };
 
 const serverHost = typeof window === "undefined" ? "localhost" : window.location.hostname;
+// В разработке игровой сервер по умолчанию работает на том же компьютере
+// и порту 3101; в развёртывании его адрес задаётся публичной переменной.
 const serverUrl =
   process.env.NEXT_PUBLIC_GAME_SERVER_URL ||
   (process.env.NODE_ENV === "development" ? `http://${serverHost}:3101` : "");
+// Ключ localStorage постоянен между перезагрузками браузера и используется
+// только для идентификатора комнаты и credentials этого игрока.
 const roomStorageKey = "durak:last-room";
+// Список ролей одновременно определяет порядок вариантов в меню и ленте ролей.
 const roles: DurakRole[] = ["paladin", "barbarian", "thief", "necromancer", "reverse"];
+// Символьные пиктограммы декоративны; смысл роли берётся из переводов.
 const roleMarks: Record<DurakRole, string> = {
   paladin: "✦",
   barbarian: "⚒",
@@ -51,6 +67,8 @@ const suitNames: Record<Suit, string> = {
   "♣": "Clubs",
 };
 
+// Рисует лицевую сторону карты. Одна и та же кнопка используется в руке,
+// на столе и в окнах выбора, поэтому обработчик клика необязателен.
 function CardFace({
   card,
   onClick,
@@ -62,6 +80,8 @@ function CardFace({
   selected?: boolean;
   small?: boolean;
 }) {
+  // CSS-классы включают компактную, выбранную и кликабельную версии;
+  // aria-атрибуты ниже обеспечивают озвучивание карты и выбора.
   return (
     <button
       type="button"
@@ -70,14 +90,17 @@ function CardFace({
       aria-label={`${card.label} ${suitNames[card.suit]}`}
       aria-pressed={onClick ? selected : undefined}
     >
-      {/* Replace typographic card marks with artwork when image assets are added. */}
+      {/* Позже символы мастей можно заменить иллюстрациями карт. */}
       <span className="card-rank">{card.label}</span>
       <span className="card-suit">{card.suit}</span>
     </button>
   );
 }
 
+// Общий вид рубашки для скрытой колоды и карт соперников.
 function CardBack({ count = 1 }: { count?: number }) {
+  // Визуально рисуем не больше трёх перекрытых карт, но доступное имя
+  // сохраняет настоящее количество скрытых карт.
   return (
     <div className="card-stack" aria-label={`${count} hidden cards`}>
       {count > 2 && <span className="card-back card-back--offset" />}
@@ -87,6 +110,8 @@ function CardBack({ count = 1 }: { count?: number }) {
   );
 }
 
+// Игровое поле: получает синхронизированное состояние партии и отправляет
+// ходы серверу через прокси moves, не меняя правила локально.
 function GameBoard({
   G,
   ctx,
@@ -100,20 +125,26 @@ function GameBoard({
   roomCode,
   onReturnHome,
 }: GameBoardProps) {
+  // Выбор связан с номером состояния: после хода сервер обновит _stateID,
+  // и устаревшие выбранные карты автоматически перестанут считаться.
   const [selection, setSelection] = useState<{ stateId: number; ids: string[]; targetId: string | null }>({
     stateId: -1,
     ids: [],
     targetId: null,
   });
+  // Состояния модального окна и выбранной в нём карты независимы от выбора
+  // карт в руке и сбрасываются после подтверждения пользователем.
   const [abilityModal, setAbilityModal] = useState<"thief-target" | "necromancer" | null>(null);
   const [selectedAbilityCard, setSelectedAbilityCard] = useState<string | null>(null);
   const [notice, setNotice] = useState("");
   const stateId = G ? _stateID : 0;
+  // Не отображаем локальное выделение, если пришло новое состояние сервера.
   const selectedIds = selection.stateId === stateId ? selection.ids : [];
   const targetAttackId = selection.stateId === stateId ? selection.targetId : null;
   const ownId = playerID === undefined || playerID === null ? -1 : Number(playerID);
   const ownPlayer = G?.players[ownId];
   const isMyTurn = Boolean(G && isActive && G.current === ownId && ctx.currentPlayer === String(ownId));
+  // Содержимое руки уже отфильтровано серверной функцией playerView.
   const selectedCards = G && ownPlayer
     ? ownPlayer.hand.filter((card) => selectedIds.includes(card.id))
     : [];
@@ -121,20 +152,27 @@ function GameBoard({
   const tRoleName = (role: DurakRole) => t.roleShort[role];
 
   const gameMoves = moves as Record<string, (...args: unknown[]) => void>;
+  // Поддерживает выбор нескольких карт одного номинала для атаки и
+  // подкидывания; для защиты и способностей оставляет одну карту.
   const toggleCard = useCallback((card: Card) => {
     setNotice("");
     setSelection((previous) => {
       const currentIds = previous.stateId === stateId ? previous.ids : [];
       if (currentIds.includes(card.id)) {
+        // Повторный клик снимает выделение, сохраняя выбранную цель атаки.
         return { stateId, ids: currentIds.filter((id) => id !== card.id), targetId: selection.targetId };
       }
       const currentCards = ownPlayer?.hand.filter((item) => currentIds.includes(item.id)) ?? [];
       if (G?.phase === "attack" || G?.phase === "throw-in") {
         if (currentCards.length > 0 && currentCards[0].rank !== card.rank) {
+          // Несовпадающий номинал заменяет выбор одной новой картой и
+          // показывает подсказку вместо накопления недопустимой комбинации.
           setNotice(t.chooseSameRank);
           return { stateId, ids: [card.id], targetId: selection.targetId };
         }
       } else {
+        // В защите карта выбирается одиночно; атака, которую она покрывает,
+        // выбирается отдельно на столе.
         return { stateId, ids: [card.id], targetId: selection.targetId };
       }
       return { stateId, ids: [...currentIds, card.id], targetId: selection.targetId };
@@ -142,6 +180,8 @@ function GameBoard({
   }, [G?.phase, ownPlayer?.hand, selection.targetId, stateId, t.chooseSameRank]);
 
   if (!G || !ownPlayer) {
+    // До получения игрового состояния показываем безопасный экран ожидания,
+    // а не обращаемся к руке, которой ещё нет в props.
     return (
       <div className="waiting-game">
         <span className="section-kicker">{t.waitingRoom.toUpperCase()}</span>
@@ -153,11 +193,15 @@ function GameBoard({
   }
 
   const playerName = (id: number) => {
+    // Имя из метаданных комнаты имеет приоритет; запасное имя нужно, пока
+    // сервер или лобби ещё не передали данные участника.
     const metadata = matchData?.find((player) => player.id === id);
     if (metadata?.name) return metadata.name;
     return G.players[id].isBot ? `${t.bot} ${id + 1}` : `${t.player} ${id + 1}`;
   };
   const openAttacks = G.table.filter((pair) => !pair.defense);
+  // Клиент заранее отключает невозможные действия для удобства интерфейса.
+  // Источником истины всё равно остаются серверные проверки в durak.mts.
   const canThrow = selectedCards.length > 0 &&
     selectedCards.every((card) => G.table.some((attack) =>
       attack.card.rank === card.rank || attack.defense?.rank === card.rank,
@@ -167,6 +211,8 @@ function GameBoard({
     selectedCards.every((card) => card.rank === selectedRank) &&
     selectedCards.length <= Math.min(6, G.players[G.defender].handCount);
   const selectedDefenseTarget = openAttacks.find((pair) => pair.card.id === targetAttackId) ?? openAttacks[0];
+  // Проверки ниже управляют только доступностью кнопок, не заменяя
+  // валидацию игровых ходов на сервере.
   const canDefend = selectedCards.length === 1 && Boolean(selectedDefenseTarget) &&
     canBeatCard(selectedDefenseTarget.card, selectedCards[0], ownPlayer.role, G.trump);
   const canTransfer = selectedCards.length === 1 && canTransferCard(G, ownId, selectedCards[0]?.id ?? "");
@@ -174,13 +220,18 @@ function GameBoard({
   const finalPlayer = G.loser === null ? undefined : G.players[G.loser];
   const move = (name: string, ...args: unknown[]) => {
     setNotice("");
+    // boardgame.io предоставляет типизированные ходы через props.moves;
+    // динамическое имя используется общим обработчиком разных кнопок.
     gameMoves[name]?.(...args);
+    // После отправки очищаем выбор, чтобы не повторить тот же ход случайно.
     setSelection({ stateId, ids: [], targetId: null });
   };
   const formatCard = (card: Card) => `${card.label}${card.suit}`;
   const describeLogEntry = (entry: GameLogEntry) => {
     const cards = entry.cards.map(formatCard).join(", ");
     switch (entry.action) {
+      // История хранит структуру действия, а здесь она превращается
+      // в человекочитаемую строку с учётом текущего языка.
       case "attack": return `${t.logAttack} ${cards}`;
       case "throw-in": return `${t.logThrowIn} ${cards}`;
       case "defense": return `${t.logDefense} ${entry.targetCard ? formatCard(entry.targetCard) : ""} → ${cards}`;
@@ -194,6 +245,8 @@ function GameBoard({
   };
   const handleHandCardClick = (card: Card) => {
     if (G.phase === "defend" && isMyTurn) {
+      // Ускоренный сценарий: если карта может покрыть выбранную (или первую
+      // незакрытую) атаку, клик сразу отправляет ход защиты.
       const attack = openAttacks.find((pair) => pair.card.id === targetAttackId) ?? openAttacks[0];
       if (attack && canBeatCard(attack.card, card, ownPlayer.role, G.trump)) {
         move("defendWith", card.id, attack.card.id);
@@ -205,6 +258,7 @@ function GameBoard({
 
   return (
     <section className="game-screen">
+      {/* Верхняя строка показывает код партии, раунд и статус соединения. */}
       <div className="game-heading">
         <div>
           <span className="section-kicker">TABLE {roomCode} / {t.round.toUpperCase()} {G.round}</span>
@@ -214,8 +268,12 @@ function GameBoard({
           <i /> {isConnected ? t.connected : t.connectionLost}
         </span>
       </div>
+      {/* Левая колонка показывает участников, скрытый счёт колоды, отбой
+          и журнал; центральная область отображает стол и руку игрока. */}
       <div className="game-layout">
         <aside className="side-panel">
+          {/* Сводка участников показывает только количество карт соперников,
+              так как их реальные руки скрыты сервером. */}
           <div className="panel-caption">{t.players} <span>{String(G.players.length).padStart(2, "0")}</span></div>
           <div className="player-list">
             {G.players.map((player) => {
@@ -250,6 +308,7 @@ function GameBoard({
           <div className="side-divider" />
           <div className="panel-caption">{t.gameHistory} <span>{G.log.length}</span></div>
           <ol className="move-history" aria-label={t.gameHistory}>
+            {/* Журнал отображает историю в порядке добавления на сервере. */}
             {G.log.length > 0 ? G.log.map((entry, index) => (
               <li key={`${entry.round}-${index}`}>
                 <span>{entry.round}.</span>
@@ -262,6 +321,7 @@ function GameBoard({
 
         <div className="table-column">
           <div className="felt-table">
+            {/* Компоновка мест адаптируется к числу участников и локальному игроку. */}
             <div className="table-stamp">DURAK <span>·</span> 52</div>
             {(() => {
               const clockwiseSeats: Record<number, number[]> = {
@@ -290,6 +350,7 @@ function GameBoard({
               });
             })()}
             <div className="battle-center">
+              {/* Центр стола: неотбитые атаки и карты защиты образуют пары. */}
               <div className="battle-meta"><span>{t[G.phase === "attack" ? "attacks" : "defend"]}</span><i /><span>{G.table.length} / {G.maxAttackCards || 6}</span></div>
               <div className="battle-cards">
                 {G.table.length === 0 ? (
@@ -328,6 +389,7 @@ function GameBoard({
           </div>
 
           <div className="hand-panel">
+            {/* Нижняя панель содержит только личную руку и действия текущей фазы. */}
             <div className="hand-heading">
               <div><span className="section-kicker">{isMyTurn ? t.currentPlayer.toUpperCase() : t.waitingRoom.toUpperCase()}</span><h2>{currentName}<span> / {tRoleName(ownPlayer.role)}</span></h2></div>
               <div className="hand-count-label">{ownPlayer.handCount}<small>{t.cards}</small></div>
@@ -344,6 +406,7 @@ function GameBoard({
               {ownPlayer.handCount === 0 && <span className="empty-hand">{t.noCards}</span>}
             </div>
             <div className="action-row">
+              {/* Для каждой фазы показывается только набор соответствующих ходов. */}
               {!isMyTurn && G.phase !== "ended" && <span className="waiting-turn">{t.turnOfPlayer}: {playerName(G.current)}. {t.waitForMove}</span>}
               {G.phase === "attack" && isMyTurn && (
                 <button className="primary-action" disabled={!canAttack} onClick={() => move("startAttack", selectedIds)}>
@@ -396,7 +459,10 @@ function GameBoard({
       </div>
       <footer className="site-footer"><span>DURAK / {roomCode}</span><span>SERVER-AUTHORITATIVE PLAY</span><span>{G.players.filter((player) => player.handCount > 0).length} {t.players.toLowerCase()} · {G.deckCount} {t.deck.toLowerCase()}</span></footer>
 
+      {/* Модальные окна выбора цели вора и карты из отбоя некроманта. */}
       {abilityModal && (
+        // Одно модальное окно переключается между выбором цели Вора и
+        // выбором карты из отбоя Некроманта.
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="ability-modal">
             <button className="modal-close" aria-label={t.close} onClick={() => setAbilityModal(null)}>×</button>
@@ -433,7 +499,10 @@ function GameBoard({
         </div>
       )}
 
+      {/* Раскрытые вором карты сервер отправляет только владельцу способности. */}
       {G.thiefOfferOwner === ownId && G.thiefReveal.length > 0 && (
+        // Это отдельное окно появляется после того, как сервер разрешил
+        // Вору увидеть выборку карт цели.
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="ability-modal">
             <span className="section-kicker">{t.useAbility.toUpperCase()}</span>
@@ -455,6 +524,7 @@ function GameBoard({
       )}
 
       {G.phase === "ended" && (
+        // Итог партии показывается поверх доски до выхода пользователя домой.
         <div className="modal-backdrop" role="dialog" aria-modal="true">
           <div className="result-modal">
             <span className="modal-symbol">♠</span><span className="section-kicker">{t.gameOver}</span>
@@ -476,7 +546,11 @@ const DurakClient = ReactClient<DurakState, GameBoardProps>({
   multiplayer: SocketIO({ server: serverUrl }),
 });
 
+// Для каждого компьютерного места создаётся отдельный сетевой клиент.
+// Только создатель комнаты управляет ботами, чтобы игроки не запускали
+// одинаковые ходы одновременно со своих браузеров.
 function BotDrivers({ connection }: { connection: RoomConnection }) {
+  // useRef удерживает обработчики отключения между рендерами компонента.
   const drivers = useRef<Array<{ stop: () => void }>>([]);
 
   useEffect(() => {
@@ -491,9 +565,12 @@ function BotDrivers({ connection }: { connection: RoomConnection }) {
         multiplayer: SocketIO({ server: serverUrl }),
       });
       let actionInProgress = false;
+      // _stateID помогает не отправить повторный ход на одинаковом состоянии.
       let lastActionState = -1;
       let timer: ReturnType<typeof setTimeout> | undefined;
       const unsubscribe = client.subscribe((state) => {
+        // Состояние может приходить несколько раз; ограничиваемся одним
+        // отложенным действием на конкретную версию хода бота.
         if (!state?.G || state.G.current !== bot.id || state.ctx.currentPlayer !== String(bot.id)) return;
         if (actionInProgress || state._stateID === lastActionState) return;
         const action = chooseBotAction(state.G as DurakState, bot.id);
@@ -501,6 +578,8 @@ function BotDrivers({ connection }: { connection: RoomConnection }) {
         actionInProgress = true;
         lastActionState = state._stateID;
         timer = setTimeout(() => {
+          // За время таймера состояние могло смениться; перед отправкой
+          // проверяем, что ход всё ещё принадлежит этому боту.
           const current = client.getState();
           if (current?.G?.current === bot.id) client.moves[action.move](...action.args);
           actionInProgress = false;
@@ -516,6 +595,8 @@ function BotDrivers({ connection }: { connection: RoomConnection }) {
       };
     });
     return () => {
+      // При смене комнаты или размонтировании отключаем таймеры,
+      // подписки и сетевые клиенты каждого бота.
       drivers.current.forEach((driver) => driver.stop());
       drivers.current = [];
     };
@@ -525,7 +606,11 @@ function BotDrivers({ connection }: { connection: RoomConnection }) {
 }
 
 export default function Home() {
+  // Экран приложения: настройка/подключение, комната ожидания или партия.
+  // Учётная запись комнаты хранится локально, чтобы обновление страницы
+  // не стирало код матча и выданные сервером игровые полномочия.
   const [language, setLanguage] = useState<Language>("ru");
+  // Настройки новой комнаты хранятся отдельно от уже созданного подключения.
   const [screen, setScreen] = useState<Screen>("setup");
   const [playerCount, setPlayerCount] = useState(4);
   const [setupRoles, setSetupRoles] = useState<DurakRole[]>(["paladin", "barbarian", "thief", "necromancer", "reverse", "paladin"]);
@@ -537,13 +622,17 @@ export default function Home() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [copyState, setCopyState] = useState("");
+  // Все тексты для JSX берутся из одного словаря выбранного языка.
   const t = translations[language];
 
   useEffect(() => {
+    // Устанавливает язык документа для вспомогательных технологий.
     document.documentElement.lang = language;
   }, [language]);
 
   useEffect(() => {
+    // После первой отрисовки восстанавливаем сохранённую комнату:
+    // отложенный запуск не обращается к localStorage во время SSR.
     const timer = window.setTimeout(() => {
       try {
         const saved = window.localStorage.getItem(roomStorageKey);
@@ -564,6 +653,7 @@ export default function Home() {
   }, []);
 
   const humanCount = computerSeats.slice(0, playerCount).filter((isComputer) => !isComputer).length;
+  // LobbyClient используется для создания комнат, входа и чтения их метаданных.
   const roomClient = useMemo(() => new LobbyClient({ server: serverUrl }), []);
 
   const updateRoomState = useCallback((metadata: RoomMetadata) => {
@@ -574,6 +664,8 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    // Лобби boardgame.io не отправляет здесь постоянное событие обновления,
+    // поэтому экран ожидания опрашивает список игроков раз в две секунды.
     if (screen !== "waiting" || !connection) return;
     let active = true;
     let matchMissing = false;
@@ -587,6 +679,8 @@ export default function Home() {
       } catch (pollError) {
         if (!active) return;
         if (pollError instanceof Error && pollError.message === "HTTP status 404") {
+          // Комната удалена/перезапущена: удаляем устаревшие credentials,
+          // возвращаем пользователя к настройке и показываем понятную ошибку.
           matchMissing = true;
           clearInterval(timer);
           try {
@@ -614,6 +708,8 @@ export default function Home() {
   }, [connection, roomClient, screen, t.connectionLost, t.roomNotFound, updateRoomState]);
 
   const saveConnection = (room: RoomConnection) => {
+    // Сохраняем секретные credentials только в локальном браузере игрока,
+    // чтобы после обновления он мог повторно войти в занятое место.
     window.localStorage.setItem(roomStorageKey, JSON.stringify(room));
     setConnection(room);
     setRoomCodeInput(room.matchID);
@@ -622,6 +718,7 @@ export default function Home() {
   };
 
   async function createRoom(event: FormEvent<HTMLFormElement>) {
+    // Обработчик формы создания: предотвращает обычную перезагрузку страницы.
     event.preventDefault();
     setError("");
     if (!serverUrl) {
@@ -633,11 +730,15 @@ export default function Home() {
       return;
     }
     setBusy(true);
+    // Конфигурация мест передаётся в setupData: роли будут доступны
+    // серверной логике игры до раздачи карт.
     const slots = setupRoles.slice(0, playerCount).map((role, id) => ({
       role,
       isBot: computerSeats[id],
     }));
     try {
+      // Сначала резервируем матч с конфигурацией мест, после чего занимаем
+      // место хозяина и по одному регистрируем места ботов.
       const { matchID } = await roomClient.createMatch("durak", {
         numPlayers: playerCount,
         setupData: { slots } satisfies DurakSetupData,
@@ -647,6 +748,8 @@ export default function Home() {
         playerName: name.trim() || `${t.player} 1`,
       });
       const botSeats: BotSeat[] = [];
+      // Ботов нужно зарегистрировать как игроков лобби и сохранить их
+      // credentials, чтобы создатель комнаты мог подключить их клиентов.
       for (let id = 1; id < slots.length; id += 1) {
         if (!slots[id].isBot) continue;
         const botJoin = await roomClient.joinMatch("durak", matchID, {
@@ -666,6 +769,7 @@ export default function Home() {
         numPlayers: playerCount,
       });
     } catch (createError) {
+      // Ошибки лобби остаются видимыми в UI и попадают в консоль разработчика.
       console.error("Could not create the game room.", createError);
       setError(t.connectionError);
     } finally {
@@ -674,6 +778,7 @@ export default function Home() {
   }
 
   async function joinRoom(event: FormEvent<HTMLFormElement>) {
+    // Вход по коду занимает любое свободное место, назначенное Lobby API.
     event.preventDefault();
     setError("");
     if (!serverUrl) {
@@ -692,6 +797,8 @@ export default function Home() {
       });
       const match = await roomClient.getMatch("durak", matchID);
       const slots = (match.setupData as DurakSetupData | undefined)?.slots ?? [];
+      // Для присоединяющегося человека список credentials ботов пуст:
+      // управлять ими может только создатель комнаты.
       const room: RoomConnection = {
         matchID,
         playerID: joined.playerID,
@@ -715,8 +822,10 @@ export default function Home() {
     if (!connection) return;
     try {
       if (navigator.clipboard?.writeText) {
+        // Современный API доступен только в подходящем безопасном контексте.
         await navigator.clipboard.writeText(connection.matchID);
       } else {
+        // Запасной способ поддерживает браузеры без navigator.clipboard.
         const input = document.createElement("textarea");
         input.value = connection.matchID;
         input.setAttribute("readonly", "");
@@ -741,6 +850,8 @@ export default function Home() {
   }
 
   function leaveRoom() {
+    // Выход из локальной сессии очищает сохранённые данные комнаты;
+    // занятость места на сервере управляется boardgame.io.
     try {
       window.localStorage.removeItem(roomStorageKey);
     } catch (storageError) {
@@ -755,6 +866,7 @@ export default function Home() {
   const roleName = (role: DurakRole) => t.roleShort[role];
   return (
     <main className="app-shell">
+      {/* Общая шапка остаётся одинаковой на экране настройки, ожидания и игры. */}
       <header className="topbar">
         <a className="brand" href="#" onClick={(event) => { event.preventDefault(); leaveRoom(); }} aria-label={t.newGame}>
           <span className="brand-mark">D</span>
@@ -771,6 +883,8 @@ export default function Home() {
         </div>
       </header>
 
+      {/* Экран создания или входа в комнату также настраивает роли и места
+          игроков-компьютеров до вызова лобби-сервера. */}
       {screen === "setup" && (
         <section className="setup-screen">
           <div className="setup-intro">
@@ -785,6 +899,8 @@ export default function Home() {
               <span className="deck-badge">52 <span>CARDS</span></span>
             </div>
             <form onSubmit={createRoom}>
+              {/* Форма хозяина одновременно задаёт число мест и настройки
+                  каждой роли до отправки конфигурации серверу. */}
               <div className="field-row">
                 <label htmlFor="host-name">{t.yourName}</label>
                 <input id="host-name" className="text-field" value={name} onChange={(event) => setName(event.target.value)} maxLength={18} />
@@ -827,6 +943,7 @@ export default function Home() {
             </form>
             <div className="join-divider"><span>{t.joinRoom}</span></div>
             <form className="join-form" onSubmit={joinRoom}>
+              {/* Отдельная форма входа принимает код существующей комнаты. */}
               <input
                 aria-label={t.roomCode}
                 className="text-field"
@@ -850,6 +967,8 @@ export default function Home() {
         </section>
       )}
 
+      {/* Экран лобби отображает занятость мест; бот-клиенты хозяина комнаты
+          запускаются и здесь, пока участники ещё подключаются. */}
       {screen === "waiting" && connection && (
         <section className="waiting-screen">
           <div className="game-heading">
@@ -863,6 +982,7 @@ export default function Home() {
             {copyState && <p className="copy-state">{copyState}</p>}
             <p>{t.waitingHint}</p>
             <div className="waiting-players">
+              {/* Для каждого места показываем роль, имя и факт присоединения. */}
               {connection.slots.map((slot, id) => {
                 const roomPlayer = roomMetadata?.players.find((player) => player.id === id);
                 const joined = Boolean(roomPlayer?.name);
@@ -882,6 +1002,8 @@ export default function Home() {
         </section>
       )}
 
+      {/* После заполнения всех мест boardgame.io подключает игровую доску
+          к матчу и серверу WebSocket. */}
       {screen === "game" && connection && (
         <>
           {connection.isHost && <BotDrivers connection={connection} />}
