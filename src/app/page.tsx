@@ -7,7 +7,7 @@ import type { BoardProps } from "boardgame.io/react";
 import { Client as ReactClient } from "boardgame.io/react";
 import { SocketIO } from "boardgame.io/multiplayer";
 import { Durak, canBeatCard, canTransferCard, chooseBotAction } from "@/lib/durak.mts";
-import type { Card, DurakState, DurakRole, DurakSetupData, Suit } from "@/lib/durak.mts";
+import type { Card, DurakState, DurakRole, DurakSetupData, GameLogEntry, Suit } from "@/lib/durak.mts";
 import { translations } from "@/lib/translations";
 import type { Language, Translation } from "@/lib/translations";
 
@@ -28,11 +28,13 @@ type Screen = "setup" | "waiting" | "game";
 type GameBoardProps = BoardProps<DurakState> & {
   translations: T;
   roomCode: string;
+  onReturnHome: () => void;
 };
 
+const serverHost = typeof window === "undefined" ? "localhost" : window.location.hostname;
 const serverUrl =
   process.env.NEXT_PUBLIC_GAME_SERVER_URL ||
-  (process.env.NODE_ENV === "development" ? "http://localhost:3101" : "");
+  (process.env.NODE_ENV === "development" ? `http://${serverHost}:3101` : "");
 const roomStorageKey = "durak:last-room";
 const roles: DurakRole[] = ["paladin", "barbarian", "thief", "necromancer", "reverse"];
 const roleMarks: Record<DurakRole, string> = {
@@ -96,6 +98,7 @@ function GameBoard({
   matchData,
   translations: t,
   roomCode,
+  onReturnHome,
 }: GameBoardProps) {
   const [selection, setSelection] = useState<{ stateId: number; ids: string[]; targetId: string | null }>({
     stateId: -1,
@@ -156,7 +159,9 @@ function GameBoard({
   };
   const openAttacks = G.table.filter((pair) => !pair.defense);
   const canThrow = selectedCards.length > 0 &&
-    selectedCards.every((card) => G.table.some((attack) => attack.card.rank === card.rank)) &&
+    selectedCards.every((card) => G.table.some((attack) =>
+      attack.card.rank === card.rank || attack.defense?.rank === card.rank,
+    )) &&
     G.table.length + selectedCards.length <= G.maxAttackCards;
   const canAttack = selectedCards.length > 0 &&
     selectedCards.every((card) => card.rank === selectedRank) &&
@@ -171,6 +176,31 @@ function GameBoard({
     setNotice("");
     gameMoves[name]?.(...args);
     setSelection({ stateId, ids: [], targetId: null });
+  };
+  const formatCard = (card: Card) => `${card.label}${card.suit}`;
+  const describeLogEntry = (entry: GameLogEntry) => {
+    const cards = entry.cards.map(formatCard).join(", ");
+    switch (entry.action) {
+      case "attack": return `${t.logAttack} ${cards}`;
+      case "throw-in": return `${t.logThrowIn} ${cards}`;
+      case "defense": return `${t.logDefense} ${entry.targetCard ? formatCard(entry.targetCard) : ""} → ${cards}`;
+      case "undo-defense": return `${t.logUndoDefense} ${entry.targetCard ? formatCard(entry.targetCard) : ""} ← ${cards}`;
+      case "transfer": return `${t.logTransfer} ${cards} ${entry.targetId === undefined ? "" : playerName(entry.targetId)}`;
+      case "take": return `${t.logTake} (${cards})`;
+      case "pass": return t.logPass;
+      case "steal": return `${t.logSteal} ${entry.targetId === undefined ? "" : playerName(entry.targetId)}: ${cards}`;
+      case "recover": return `${t.logRecover}: ${cards}`;
+    }
+  };
+  const handleHandCardClick = (card: Card) => {
+    if (G.phase === "defend" && isMyTurn) {
+      const attack = openAttacks.find((pair) => pair.card.id === targetAttackId) ?? openAttacks[0];
+      if (attack && canBeatCard(attack.card, card, ownPlayer.role, G.trump)) {
+        move("defendWith", card.id, attack.card.id);
+        return;
+      }
+    }
+    toggleCard(card);
   };
 
   return (
@@ -217,33 +247,53 @@ function GameBoard({
             ) : <div className="discard-empty">—</div>}
             <span>{G.discard.length} {t.cards}</span>
           </div>
+          <div className="side-divider" />
+          <div className="panel-caption">{t.gameHistory} <span>{G.log.length}</span></div>
+          <ol className="move-history" aria-label={t.gameHistory}>
+            {G.log.length > 0 ? G.log.map((entry, index) => (
+              <li key={`${entry.round}-${index}`}>
+                <span>{entry.round}.</span>
+                <strong>{playerName(entry.playerId)}</strong>
+                <small>{describeLogEntry(entry)}</small>
+              </li>
+            )) : <li className="move-history-empty">{t.emptyHistory}</li>}
+          </ol>
         </aside>
 
         <div className="table-column">
           <div className="felt-table">
             <div className="table-stamp">DURAK <span>·</span> 52</div>
-            {G.players.map((player) => {
-              const seatClass = G.players.length === 2
-                ? (player.id === ownId ? "seat-bottom" : "seat-top")
-                : `seat-${player.id}`;
-              return (
-                <div className={`table-player ${seatClass}${G.current === player.id ? " table-player--turn" : ""}`} key={player.id}>
-                  <span className="seat-avatar">{playerName(player.id).slice(0, 1).toUpperCase()}</span>
-                  <span className="seat-name">{playerName(player.id)}</span>
-                  <span className="seat-role">{roleMarks[player.role]} {tRoleName(player.role)}</span>
-                  <div className="opponent-cards">
-                    {player.handCount > 0 && <CardBack count={player.handCount} />}
-                    <span>{player.handCount} {t.cards}</span>
+            {(() => {
+              const clockwiseSeats: Record<number, number[]> = {
+                3: [0, 1, 2],
+                4: [0, 1, 2, 3],
+                5: [0, 1, 4, 2, 3],
+                6: [0, 1, 4, 2, 3, 5],
+              };
+              return G.players.map((player) => {
+                const seatClass = G.players.length === 2
+                  ? (player.id === ownId ? "seat-bottom" : "seat-top")
+                  : `seat-${clockwiseSeats[G.players.length]?.[player.id] ?? player.id}`;
+                const out = player.handCount === 0;
+                return (
+                  <div className={`table-player ${seatClass}${G.current === player.id ? " table-player--turn" : ""}${out ? " table-player--out" : ""}`} key={player.id}>
+                    <span className="seat-avatar">{playerName(player.id).slice(0, 1).toUpperCase()}</span>
+                    <span className="seat-name">{playerName(player.id)}</span>
+                    <span className="seat-role">{roleMarks[player.role]} {tRoleName(player.role)}</span>
+                    <div className="opponent-cards">
+                      {player.handCount > 0 && <CardBack count={player.handCount} />}
+                      <span>{player.handCount} {t.cards}</span>
+                    </div>
+                    {G.current === player.id && <span className="turn-pip">{t.turn}</span>}
                   </div>
-                  {G.current === player.id && <span className="turn-pip">{t.turn}</span>}
-                </div>
-              );
-            })}
+                );
+              });
+            })()}
             <div className="battle-center">
               <div className="battle-meta"><span>{t[G.phase === "attack" ? "attacks" : "defend"]}</span><i /><span>{G.table.length} / {G.maxAttackCards || 6}</span></div>
               <div className="battle-cards">
                 {G.table.length === 0 ? (
-                  <div className="table-empty"><span>♠</span><strong>{t.selectCard}</strong><small>{t.attackHint}</small></div>
+                  <div className="table-empty"><span>♠</span><strong>{isMyTurn ? t.yourTurn : `${t.turnOfPlayer}: ${playerName(G.current)}`}</strong><small>{isMyTurn ? t.attackHint : t.waitForMove}</small></div>
                 ) : G.table.map((pair) => (
                   <div className="card-pair" key={pair.card.id}>
                     <CardFace
@@ -258,7 +308,15 @@ function GameBoard({
                         }))
                         : undefined}
                     />
-                    {pair.defense ? <CardFace card={pair.defense} small /> : <div className="defense-slot">?</div>}
+                    {pair.defense
+                      ? <CardFace
+                        card={pair.defense}
+                        small
+                        onClick={isMyTurn && (G.phase === "defend" || G.phase === "defend-ready")
+                          ? () => move("undoDefense", pair.card.id)
+                          : undefined}
+                      />
+                      : <div className="defense-slot">?</div>}
                   </div>
                 ))}
               </div>
@@ -280,13 +338,13 @@ function GameBoard({
                   key={card.id}
                   card={card}
                   selected={selectedIds.includes(card.id)}
-                  onClick={() => toggleCard(card)}
+                  onClick={() => handleHandCardClick(card)}
                 />
               ))}
               {ownPlayer.handCount === 0 && <span className="empty-hand">{t.noCards}</span>}
             </div>
             <div className="action-row">
-              {!isMyTurn && G.phase !== "ended" && <span className="waiting-turn">{t.currentPlayer}: {playerName(G.current)}</span>}
+              {!isMyTurn && G.phase !== "ended" && <span className="waiting-turn">{t.turnOfPlayer}: {playerName(G.current)}. {t.waitForMove}</span>}
               {G.phase === "attack" && isMyTurn && (
                 <button className="primary-action" disabled={!canAttack} onClick={() => move("startAttack", selectedIds)}>
                   {t.attackCards}<span>↗</span>
@@ -332,7 +390,7 @@ function GameBoard({
                 >{t.useAbility}<small>{5 - ownPlayer.necromancerUses}/5</small></button>
               )}
             </div>
-            <p className="game-notice">{notice || (isMyTurn ? t.chooseCard : `${t.currentPlayer}: ${playerName(G.current)}`)}</p>
+            <p className="game-notice">{notice || (isMyTurn ? `${t.yourTurn}. ${G.phase === "attack" && G.table.length === 0 ? t.attackHint : t.chooseCard}` : `${t.turnOfPlayer}: ${playerName(G.current)}. ${t.waitForMove}`)}</p>
           </div>
         </div>
       </div>
@@ -345,13 +403,16 @@ function GameBoard({
             <span className="section-kicker">{t.useAbility.toUpperCase()}</span>
             <h2>{abilityModal === "thief-target" ? t.steal : t.chooseDiscard}</h2>
             {abilityModal === "thief-target" && (
-              <div className="target-options">
-                {G.players.filter((player) => player.id !== ownId && player.handCount > 0).map((player) => (
-                  <button key={player.id} onClick={() => { move("useThief", player.id); setAbilityModal(null); }}>
-                    <span className="avatar">{playerName(player.id).slice(0, 1)}</span><strong>{playerName(player.id)}</strong><span>{player.handCount}</span>
-                  </button>
-                ))}
-              </div>
+              <>
+                <div className="target-options">
+                  {G.players.filter((player) => player.id !== ownId && player.handCount > 1).map((player) => (
+                    <button key={player.id} onClick={() => { move("useThief", player.id); setAbilityModal(null); }}>
+                      <span className="avatar">{playerName(player.id).slice(0, 1)}</span><strong>{playerName(player.id)}</strong><span>{player.handCount}</span>
+                    </button>
+                  ))}
+                </div>
+                <button className="secondary-action" onClick={() => setAbilityModal(null)}>{t.close}</button>
+              </>
             )}
             {abilityModal === "necromancer" && (
               <>
@@ -388,6 +449,7 @@ function GameBoard({
               disabled={!selectedAbilityCard}
               onClick={() => { move("stealCard", selectedAbilityCard); setSelectedAbilityCard(null); }}
             >{t.select}<span className="button-arrow">↗</span></button>
+            <button className="secondary-action" onClick={() => { move("declineThief"); setSelectedAbilityCard(null); }}>{t.declineSteal}</button>
           </div>
         </div>
       )}
@@ -398,6 +460,7 @@ function GameBoard({
             <span className="modal-symbol">♠</span><span className="section-kicker">{t.gameOver}</span>
             <h2>{finalPlayer ? playerName(finalPlayer.id) : t.loser}</h2><p>{t.loser}</p>
             <strong>{roomCode}</strong>
+            <button className="start-button" onClick={onReturnHome}>{t.close}<span className="button-arrow">↗</span></button>
           </div>
         </div>
       )}
@@ -513,7 +576,9 @@ export default function Home() {
   useEffect(() => {
     if (screen !== "waiting" || !connection) return;
     let active = true;
+    let matchMissing = false;
     const pollRoom = async () => {
+      if (!active || matchMissing) return;
       try {
         const match = await roomClient.getMatch("durak", connection.matchID);
         if (!active) return;
@@ -521,17 +586,32 @@ export default function Home() {
         setError("");
       } catch (pollError) {
         if (!active) return;
+        if (pollError instanceof Error && pollError.message === "HTTP status 404") {
+          matchMissing = true;
+          clearInterval(timer);
+          try {
+            window.localStorage.removeItem(roomStorageKey);
+          } catch (storageError) {
+            console.error("Could not clear the missing game room.", storageError);
+          }
+          setConnection(null);
+          setRoomMetadata(null);
+          setRoomCodeInput("");
+          setScreen("setup");
+          setError(t.roomNotFound);
+          return;
+        }
         console.error("Could not refresh the game room.", pollError);
         setError(t.connectionLost);
       }
     };
-    void pollRoom();
     const timer = setInterval(() => void pollRoom(), 2000);
+    void pollRoom();
     return () => {
       active = false;
       clearInterval(timer);
     };
-  }, [connection, roomClient, screen, t.connectionLost, updateRoomState]);
+  }, [connection, roomClient, screen, t.connectionLost, t.roomNotFound, updateRoomState]);
 
   const saveConnection = (room: RoomConnection) => {
     window.localStorage.setItem(roomStorageKey, JSON.stringify(room));
@@ -634,12 +714,29 @@ export default function Home() {
   async function copyRoomCode() {
     if (!connection) return;
     try {
-      await navigator.clipboard.writeText(connection.matchID);
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(connection.matchID);
+      } else {
+        const input = document.createElement("textarea");
+        input.value = connection.matchID;
+        input.setAttribute("readonly", "");
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.append(input);
+        let copied: boolean;
+        try {
+          input.select();
+          copied = document.execCommand("copy");
+        } finally {
+          input.remove();
+        }
+        if (!copied) throw new Error("The browser denied the copy command.");
+      }
       setCopyState(t.copied);
       window.setTimeout(() => setCopyState(""), 1800);
     } catch (copyError) {
       console.error("Could not copy the room code.", copyError);
-      setCopyState(t.connectionError);
+      setCopyState(t.copyFailed);
     }
   }
 
@@ -794,6 +891,7 @@ export default function Home() {
             credentials={connection.credentials}
             translations={t}
             roomCode={connection.matchID}
+            onReturnHome={leaveRoom}
           />
           {error && <p className="global-error" role="alert">{error}</p>}
         </>

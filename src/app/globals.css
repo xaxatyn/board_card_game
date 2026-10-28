@@ -127,6 +127,12 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .mini-card { width: 34px; height: 47px; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: 4px; border: 1px solid #e7e7df; border-radius: 4px; background: #fff; color: var(--green); font: 13px Georgia, serif; }
 .mini-card b { font-size: 13px; }
 .discard-empty { width: 34px; height: 47px; display: grid; place-items: center; border: 1px dashed #d9d9d0; }
+.move-history { max-height: 190px; overflow-y: auto; margin: 12px 0 0; padding: 0 5px 0 22px; color: #77786d; font-size: 9px; }
+.move-history li { padding: 6px 0; border-bottom: 1px solid #efefe8; line-height: 1.4; }
+.move-history li > span { margin-right: 5px; color: #9a9b90; }
+.move-history li strong { margin-right: 5px; color: #51594d; }
+.move-history li small { display: block; padding: 3px 0 0 19px; color: #85877c; font-size: 9px; }
+.move-history .move-history-empty { padding-left: 0; border-bottom: 0; list-style: none; }
 
 .table-column { min-width: 0; display: flex; flex-direction: column; gap: 14px; }
 .felt-table { position: relative; min-height: 405px; overflow: hidden; border: 1px solid #294b3b; background: #214838; box-shadow: inset 0 0 0 6px #1e4234, inset 0 0 0 7px #56715c; color: #fff; }
@@ -134,6 +140,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .table-stamp { position: absolute; z-index: 1; top: 21px; left: 0; right: 0; text-align: center; color: #dce4d8; font-size: 8px; letter-spacing: .22em; opacity: .42; }
 .table-stamp span { padding: 0 5px; color: #d2b577; }
 .table-player { position: absolute; z-index: 2; display: grid; grid-template-columns: 26px auto; grid-template-rows: 15px 15px; column-gap: 7px; align-items: center; min-width: 110px; color: #e9eee5; }
+.table-player--out { opacity: .48; }
 .seat-avatar { grid-row: 1 / 3; width: 25px; height: 25px; background: #d6dfd3; color: #2d4a39; font-size: 11px; }
 .seat-name { max-width: 100px; overflow: hidden; color: #fff; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; font-weight: 700; }
 .seat-role { color: #bdcbb9; font-size: 8px; }
@@ -148,25 +155,26 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .table-player--turn .seat-avatar { background: #c5a36a; color: #fff; }
 .turn-pip { position: absolute; left: 32px; top: -11px; color: #dfc188; font-size: 7px; text-transform: uppercase; letter-spacing: .12em; }
 .opponent-cards { position: absolute; top: 32px; left: 32px; display: flex; align-items: center; gap: 12px; color: #d8e1d4; font-size: 8px; white-space: nowrap; }
-.opponent-cards .card-stack { transform: scale(.58); transform-origin: top left; width: 20px; height: 28px; margin-right: -11px; }
+.opponent-cards .card-stack { transform: scale(.58); transform-origin: top left; width: 20px; height: 28px; margin-right: 0px; }
 .opponent-cards .card-back { width: 34px; height: 47px; }
 .battle-center { position: absolute; z-index: 1; top: 50%; left: 50%; display: flex; flex-direction: column; align-items: center; transform: translate(-50%, -50%); }
 .battle-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; color: #ced7ca; font-size: 8px; letter-spacing: .13em; text-transform: uppercase; }
 .battle-meta i { width: 3px; height: 3px; border-radius: 50%; background: #c6a56f; }
-.battle-cards { min-height: 110px; display: flex; align-items: center; justify-content: center; gap: 12px; }
+.battle-cards { min-height: 110px; display: flex; align-items: flex-start; justify-content: center; gap: 40px; }
 .table-empty { min-width: 172px; display: flex; flex-direction: column; align-items: center; gap: 7px; color: #d8e2d5; }
 .table-empty > span { color: #b6c9b5; font-size: 25px; opacity: .62; }
 .table-empty strong { font: 15px Georgia, serif; }
 .table-empty small { color: #c2d0c0; font-size: 9px; }
 .card-pair { position: relative; display: flex; gap: 4px; padding-right: 5px; }
+.card-pair .playing-card:nth-child(2) { position: absolute; left: 27px; top: 20px; }
 .card-pair + .card-pair { margin-left: -5px; }
-.defense-slot { width: 61px; height: 86px; display: grid; place-items: center; margin: 9px 0 0 -27px; border: 1px dashed #d3dccd66; border-radius: 7px; color: #d3dccd; font: 20px Georgia, serif; }
+.defense-slot { width: 54px; height: 76px; display: grid; place-items: center; margin: 20px 0 0 -27px; border: 1px dashed #d3dccd66; border-radius: 7px; color: #d3dccd; font: 20px Georgia, serif; }
 .battle-caption { margin-top: 11px; color: #d5dfd2; font-size: 9px; }
 .battle-caption span { padding: 0 7px; color: #d9b879; }
 .trump-indicator { position: absolute; z-index: 2; right: 22px; bottom: 17px; display: flex; align-items: center; gap: 8px; color: #d7e1d3; font-size: 8px; letter-spacing: .1em; text-transform: uppercase; }
 .trump-indicator b { color: #fff; font: 19px Georgia, serif; }
 
-.playing-card { position: relative; width: 62px; height: 88px; flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; justify-content: space-between; padding: 7px; border: 1px solid #e3e5dc; border-radius: 7px; background: #fff; color: #397052; box-shadow: 0 3px 9px #141c1426; text-align: left; }
+.playing-card { position: relative; width: 62px; height: 88px; flex: 0 0 auto; display: flex; flex-direction: row; align-items: flex-start; justify-content: flex-start; padding: 5px; border: 1px solid #5da98a; border-radius: 7px; background: #fff; color: #397052; box-shadow: 0 3px 9px #141c1433; text-align: left; }
 .card-rank { font: 16px Georgia, "Times New Roman", serif; line-height: 1; }
 .card-suit { font: 17px Georgia, "Times New Roman", serif; line-height: 1; }
 .playing-card--interactive { cursor: pointer; transition: transform .13s ease, box-shadow .13s ease; }
@@ -181,7 +189,7 @@ button:focus-visible, input:focus-visible, select:focus-visible { outline: 2px s
 .hand-heading h2 span { color: #9a9b90; font: 11px Arial, sans-serif; }
 .hand-count-label { color: var(--green); font: 22px Georgia, serif; }
 .hand-count-label small { display: block; color: #9a9b90; font: 8px Arial, sans-serif; text-align: right; }
-.hand-cards { min-height: 114px; display: flex; align-items: flex-end; justify-content: center; gap: 8px; padding: 14px 0 8px; overflow-x: auto; }
+.hand-cards { min-height: 114px; display: flex; align-items: flex-end; justify-content: flex-start; gap: 8px; padding: 14px 10px 8px; overflow-x: auto; }
 .empty-hand { align-self: center; color: #999a8e; font: 13px Georgia, serif; }
 .action-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding-top: 12px; border-top: 1px solid #efefe8; }
 .primary-action, .secondary-action, .quiet-action, .ability-action { min-height: 36px; display: flex; align-items: center; justify-content: center; gap: 12px; padding: 0 14px; border: 1px solid transparent; cursor: pointer; font-size: 10px; transition: background .16s ease; }

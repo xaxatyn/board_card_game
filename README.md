@@ -33,9 +33,9 @@ npm ci
    npm run dev
    ```
 
-3. Откройте адрес, указанный Next.js — обычно [http://localhost:3000](http://localhost:3000). Создайте комнату, выберите число мест и тип каждого места. Для игры одному выберите компьютер для второго места.
+3. Откройте адрес, указанный Next.js — обычно [http://localhost:3000](http://localhost:3000). Чтобы подключиться с телефона или другого компьютера в той же сети Wi-Fi, откройте сайт по локальному IP-адресу компьютера, например `http://192.168.0.107:3000`. Создайте комнату, выберите число мест и тип каждого места. Для игры одному выберите компьютер для второго места.
 
-Оба окна терминала должны оставаться открытыми во время игры. Если игровой сервер перезапустить, незавершённые комнаты пропадут.
+Next.js и игровой сервер автоматически разрешают локальные IPv4-адреса компьютера; клиент подключается к игровому серверу по тому же адресу. Если Windows спросит о доступе через брандмауэр, разрешите его для частной сети. Оба окна терминала должны оставаться открытыми во время игры. Если игровой сервер перезапустить, незавершённые комнаты пропадут.
 
 ### Изменение текстов
 
@@ -93,7 +93,7 @@ Use Node.js 22.18 or newer.
 
 3. Open `http://localhost:3000`, create a room, and share its room code. Each player opens the same site, enters the code, and joins a free seat. The game starts when all seats are occupied.
 
-The local web app connects to `http://localhost:3101` by default. If that port is unavailable, choose another port by setting `PORT` for the game server and `NEXT_PUBLIC_GAME_SERVER_URL` for the web app to the same address; set `CLIENT_ORIGIN` on the game server to the comma-separated list of allowed web-app origins.
+The local web app connects to `http://localhost:3101` by default. For LAN access, open the app using the computer's local IP address; the game client will use that same host, and the development servers allow the computer's local IPv4 addresses. If a custom web-app port or game-server address is needed, set `CLIENT_ORIGIN` on the game server to the comma-separated list of allowed web-app origins and `NEXT_PUBLIC_GAME_SERVER_URL` for the web app to the game-server address.
 
 ## Deploy to Render
 

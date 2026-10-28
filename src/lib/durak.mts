@@ -16,6 +16,14 @@ export type Player = {
   necromancerLastRound: number;
 };
 export type Attack = { card: Card; defense?: Card };
+export type GameLogEntry = {
+  round: number;
+  playerId: number;
+  action: "attack" | "throw-in" | "defense" | "undo-defense" | "transfer" | "take" | "pass" | "steal" | "recover";
+  cards: Card[];
+  targetId?: number;
+  targetCard?: Card;
+};
 export type DurakPhase = "attack" | "throw-in" | "defend" | "defend-ready" | "ended";
 export type DurakState = {
   players: Player[];
@@ -27,6 +35,8 @@ export type DurakState = {
   defender: number;
   current: number;
   table: Attack[];
+  log: GameLogEntry[];
+  postDefenseThrowInUsed: boolean;
   phase: DurakPhase;
   throwInDone: number[];
   maxAttackCards: number;
@@ -42,7 +52,7 @@ export type DurakSetupData = {
 };
 
 const suits: Suit[] = ["♠", "♥", "♦", "♣"];
-const ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "T", "J", "Q", "K", "A"];
+const ranks = ["2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K", "A"];
 const handLimit = (player: Player) =>
   player.role === "barbarian" ? 8 : 6;
 
@@ -88,6 +98,17 @@ function updateCounts(G: DurakState) {
   G.deckCount = G.deck.length;
 }
 
+function addLogEntry(
+  G: DurakState,
+  playerId: number,
+  action: GameLogEntry["action"],
+  cards: Card[] = [],
+  targetId?: number,
+  targetCard?: Card,
+) {
+  G.log.push({ round: G.round, playerId, action, cards, targetId, targetCard });
+}
+
 function checkGameEnd(G: DurakState): boolean {
   if (G.deck.length !== 0) return false;
   const remaining = G.players.filter((player) => player.hand.length > 0);
@@ -123,9 +144,20 @@ function moveToNextThrower(
     G.phase = "throw-in";
     setCurrent(G, events, next);
   } else {
-    G.phase = "defend";
+    G.phase = G.table.every(({ defense }) => defense) ? "defend-ready" : "defend";
     setCurrent(G, events, G.defender);
   }
+}
+
+function getTransferTarget(G: DurakState, actor: number, attackCount: number) {
+  for (let distance = 1; distance < G.players.length; distance += 1) {
+    const targetId = (actor + distance) % G.players.length;
+    const target = G.players[targetId];
+    if (target.hand.length > 0 ? target.hand.length >= attackCount : canReturn(target)) {
+      return targetId;
+    }
+  }
+  return undefined;
 }
 
 export function canBeatCard(attack: Card, defense: Card, role: DurakRole, trump: Suit) {
@@ -140,11 +172,8 @@ export function canTransferCard(G: DurakState, actor: number, cardId: string) {
   const player = G.players[actor];
   const card = player?.hand.find((item) => item.id === cardId);
   if (!card || !G.table.some((attack) => attack.card.rank === card.rank)) return false;
-  const target = G.players[(actor + 1) % G.players.length];
   const newAttackCount = G.table.length + 1;
-  if (target.hand.length > 0 && target.hand.length < newAttackCount) return false;
-  if (target.hand.length === 0 && !canReturn(target)) return false;
-  return newAttackCount <= 6;
+  return newAttackCount <= 6 && getTransferTarget(G, actor, newAttackCount) !== undefined;
 }
 
 function endRound(G: DurakState, wasTaken: boolean): boolean {
@@ -155,6 +184,7 @@ function endRound(G: DurakState, wasTaken: boolean): boolean {
   const previousDefender = G.defender;
   G.table = [];
   G.throwInDone = [];
+  G.postDefenseThrowInUsed = false;
   refillHands(G, previousAttacker, previousDefender);
   if (wasTaken) {
     G.attacker = activePlayer(G.players, previousDefender);
@@ -225,6 +255,8 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       defender: activePlayer(players, attacker),
       current: attacker,
       table: [],
+      log: [],
+      postDefenseThrowInUsed: false,
       phase: "attack",
       throwInDone: [],
       maxAttackCards: 0,
@@ -257,6 +289,7 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       player.hand = player.hand.filter((card) => !cardIds.includes(card.id));
       G.attacker = actor;
       G.table = selected.map((card) => ({ card }));
+      addLogEntry(G, actor, "attack", selected);
       G.maxAttackCards = limit;
       G.throwInDone = [];
       G.thiefOffer = [];
@@ -274,12 +307,15 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       const cards = cardIds.map((id) => player?.hand.find((card) => card.id === id));
       if (cards.some((card) => !card) || new Set(cardIds).size !== cardIds.length) return;
       const selected = cards as Card[];
-      const ranksOnTable = new Set(G.table.map(({ card }) => card.rank));
+      const ranksOnTable = new Set(G.table.flatMap(({ card, defense }) =>
+        [card.rank, ...(defense ? [defense.rank] : [])],
+      ));
       if (selected.some((card) => !ranksOnTable.has(card.rank))) return;
       if (G.table.length + selected.length > G.maxAttackCards || G.table.length + selected.length > 6) return;
       player.hand = player.hand.filter((card) => !cardIds.includes(card.id));
       G.table.push(...selected.map((card) => ({ card })));
       G.throwInDone.push(actor);
+      addLogEntry(G, actor, "throw-in", selected);
       updateCounts(G);
       moveToNextThrower(G, events);
     },
@@ -288,10 +324,11 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       const actor = Number(playerID);
       if (G.phase !== "throw-in" || actor !== G.current) return;
       G.throwInDone.push(actor);
+      addLogEntry(G, actor, "pass");
       moveToNextThrower(G, events);
     },
 
-    defendWith: ({ G, playerID }, defenseId: string, attackId: string) => {
+    defendWith: ({ G, events, playerID }, defenseId: string, attackId: string) => {
       const actor = Number(playerID);
       if (G.phase !== "defend" || actor !== G.defender || actor !== G.current) return;
       const player = G.players[actor];
@@ -300,8 +337,29 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       if (!attack || !defense || !canBeatCard(attack.card, defense, player.role, G.trump)) return;
       player.hand = player.hand.filter((card) => card.id !== defense.id);
       attack.defense = defense;
+      addLogEntry(G, actor, "defense", [defense], undefined, attack.card);
       updateCounts(G);
-      if (G.table.every((pair) => pair.defense)) G.phase = "defend-ready";
+      if (G.table.every((pair) => pair.defense)) {
+        if (!G.postDefenseThrowInUsed) {
+          G.postDefenseThrowInUsed = true;
+          G.throwInDone = [];
+          moveToNextThrower(G, events);
+        } else {
+          G.phase = "defend-ready";
+        }
+      }
+    },
+
+    undoDefense: ({ G, playerID }, attackId: string) => {
+      const actor = Number(playerID);
+      if (!["defend", "defend-ready"].includes(G.phase) || actor !== G.defender || actor !== G.current) return;
+      const attack = G.table.find(({ card, defense }) => card.id === attackId && defense);
+      if (!attack?.defense) return;
+      G.players[actor].hand.push(attack.defense);
+      addLogEntry(G, actor, "undo-defense", [attack.defense], undefined, attack.card);
+      delete attack.defense;
+      G.phase = "defend";
+      updateCounts(G);
     },
 
     finishDefense: ({ G, events, playerID }) => {
@@ -316,6 +374,7 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       if (!["defend", "defend-ready"].includes(G.phase) || actor !== G.defender || actor !== G.current) return;
       const player = G.players[actor];
       const wasOut = player.hand.length === 0;
+      addLogEntry(G, actor, "take", G.table.flatMap(({ card, defense }) => [card, ...(defense ? [defense] : [])]));
       player.hand.push(...G.table.flatMap(({ card, defense }) => [card, ...(defense ? [defense] : [])]));
       if (wasOut && canReturn(player)) player.returns += 1;
       const ended = endRound(G, true);
@@ -327,12 +386,14 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       if (G.phase !== "defend" || actor !== G.defender || actor !== G.current || !canTransferCard(G, actor, cardId)) return;
       const player = G.players[actor];
       const card = player.hand.find((item) => item.id === cardId);
-      const targetId = (actor + 1) % G.players.length;
+      const targetId = getTransferTarget(G, actor, G.table.length + 1);
+      if (targetId === undefined) return;
       const target = G.players[targetId];
       const newAttackCount = G.table.length + 1;
       if (!card) return;
       player.hand = player.hand.filter((item) => item.id !== card.id);
       G.table.push({ card });
+      addLogEntry(G, actor, "transfer", [card], targetId);
       G.defender = targetId;
       G.maxAttackCards = Math.min(6, Math.max(target.hand.length, newAttackCount));
       G.throwInDone = [actor];
@@ -345,7 +406,7 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       const thief = G.players[actor];
       const target = G.players[targetId];
       if (G.phase !== "attack" || G.current !== actor || thief?.role !== "thief" || thief.thiefUses >= 3 || thief.thiefLastRound === G.round) return;
-      if (!target || target.id === actor || target.hand.length === 0) return;
+      if (!target || target.id === actor || target.hand.length <= 1) return;
       G.thiefOfferOwner = actor;
       G.thiefOfferTarget = targetId;
       G.thiefOffer = random.Shuffle(target.hand).slice(0, 3);
@@ -358,9 +419,12 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       if (G.phase !== "attack" || G.current !== actor || thief?.role !== "thief" || thief.thiefUses >= 3) return;
       if (G.thiefOfferOwner !== actor || G.thiefOfferTarget === null) return;
       const target = G.players[G.thiefOfferTarget];
+      if (target.hand.length <= 1) return;
       const cardIndex = target.hand.findIndex((card) => card.id === cardId && G.thiefOffer.some((offered) => offered.id === cardId));
       if (cardIndex < 0) return;
-      thief.hand.push(target.hand.splice(cardIndex, 1)[0]);
+      const [stolenCard] = target.hand.splice(cardIndex, 1);
+      thief.hand.push(stolenCard);
+      addLogEntry(G, actor, "steal", [stolenCard], target.id);
       thief.thiefUses += 1;
       thief.thiefLastRound = G.round;
       G.thiefOffer = [];
@@ -371,6 +435,15 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       checkGameEnd(G);
     },
 
+    declineThief: ({ G, playerID }) => {
+      const actor = Number(playerID);
+      if (G.phase !== "attack" || G.current !== actor || G.thiefOfferOwner !== actor) return;
+      G.thiefOffer = [];
+      G.thiefReveal = [];
+      G.thiefOfferOwner = null;
+      G.thiefOfferTarget = null;
+    },
+
     useNecromancer: ({ G, playerID }, cardId: string) => {
       const actor = Number(playerID);
       const player = G.players[actor];
@@ -379,6 +452,7 @@ export const Durak: Game<DurakState, Record<string, unknown>, DurakSetupData> = 
       const cardIndex = G.discard.findIndex((card) => card.id === cardId);
       if (!eligible.some((card) => card.id === cardId) || cardIndex < 0) return;
       player.hand.push(G.discard.splice(cardIndex, 1)[0]);
+      addLogEntry(G, actor, "recover", [player.hand.at(-1)!]);
       player.necromancerUses += 1;
       player.necromancerLastRound = G.round;
       updateCounts(G);
@@ -411,7 +485,7 @@ export function chooseBotAction(G: DurakState, playerId: number): { move: string
         return { move: "stealCard", args: [G.thiefReveal[0].id] };
       }
       if (G.thiefOfferOwner !== playerId) {
-        const target = G.players.find((opponent) => opponent.id !== playerId && opponent.handCount > 0);
+        const target = G.players.find((opponent) => opponent.id !== playerId && opponent.handCount > 1);
         if (target) return { move: "useThief", args: [target.id] };
       }
     }
@@ -425,7 +499,9 @@ export function chooseBotAction(G: DurakState, playerId: number): { move: string
     return attacks ? { move: "startAttack", args: [attacks.slice(0, Math.min(2, attacks.length, G.players[G.defender].handCount)).map((card) => card.id)] } : null;
   }
   if (G.phase === "throw-in") {
-    const allowedRanks = new Set(G.table.map(({ card }) => card.rank));
+    const allowedRanks = new Set(G.table.flatMap(({ card, defense }) =>
+      [card.rank, ...(defense ? [defense.rank] : [])],
+    ));
     const card = player.hand.find((item) => allowedRanks.has(item.rank));
     return card ? { move: "throwIn", args: [[card.id]] } : { move: "passThrowIn", args: [] };
   }

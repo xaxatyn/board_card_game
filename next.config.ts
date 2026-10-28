@@ -1,7 +1,15 @@
+import { networkInterfaces } from "node:os";
 import type { NextConfig } from "next";
 
+const lanAddresses = Object.values(networkInterfaces()).flatMap(
+  (addresses) =>
+    addresses
+      ?.filter((address) => address.family === "IPv4" && !address.internal)
+      .map((address) => address.address) ?? [],
+);
+
 const nextConfig: NextConfig = {
-  /* config options here */
+  allowedDevOrigins: lanAddresses,
   turbopack: {
     rules: {
       "*.css": {

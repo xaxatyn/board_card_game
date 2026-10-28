@@ -25,6 +25,8 @@ const makeState = (players, overrides = {}) => ({
   defender: 1,
   current: 0,
   table: [],
+  log: [],
+  postDefenseThrowInUsed: false,
   phase: "attack",
   throwInDone: [],
   maxAttackCards: 0,
@@ -176,26 +178,45 @@ test("a transfer can return an eligible player with no cards", () => {
   assert.equal(state.players[2].handCount, 2);
 });
 
+test("a transfer skips an out barbarian and searches clockwise for an eligible defender", () => {
+  const transferCard = card("♥", "6", 6);
+  const state = makeState([
+    emptyPlayer(0),
+    emptyPlayer(1, "paladin", [transferCard]),
+    emptyPlayer(2, "barbarian", []),
+    emptyPlayer(3, "paladin", [card("♣", "8", 8), card("♦", "9", 9)]),
+  ], {
+    attacker: 0,
+    defender: 1,
+    current: 1,
+    phase: "defend",
+    table: [{ card: card("♠", "6", 6) }],
+    maxAttackCards: 1,
+  });
+  Durak.moves.transfer({ G: state, playerID: "1", events }, transferCard.id);
+  assert.equal(state.defender, 3);
+  assert.equal(state.current, 3);
+  assert.equal(state.table.length, 2);
+});
+
 test("a barbarian or a player with two returns cannot be transferred back", () => {
   const attack = { card: card("♠", "6", 6) };
   const transferCard = card("♥", "6", 6);
   const barbarianGame = makeState([
-    emptyPlayer(0),
-    emptyPlayer(1, "paladin", [transferCard]),
-    emptyPlayer(2, "barbarian", []),
-  ], { current: 1, defender: 1, phase: "defend", table: [attack] });
-  Durak.moves.transfer({ G: barbarianGame, playerID: "1", events }, transferCard.id);
-  assert.equal(barbarianGame.defender, 1);
+    emptyPlayer(0, "paladin", [transferCard]),
+    emptyPlayer(1, "barbarian", []),
+  ], { current: 0, defender: 0, phase: "defend", table: [attack] });
+  Durak.moves.transfer({ G: barbarianGame, playerID: "0", events }, transferCard.id);
+  assert.equal(barbarianGame.defender, 0);
 
-  const twiceReturned = emptyPlayer(2, "paladin", []);
+  const twiceReturned = emptyPlayer(1, "paladin", []);
   twiceReturned.returns = 2;
   const exhaustedGame = makeState([
-    emptyPlayer(0),
-    emptyPlayer(1, "paladin", [transferCard]),
+    emptyPlayer(0, "paladin", [transferCard]),
     twiceReturned,
-  ], { current: 1, defender: 1, phase: "defend", table: [attack] });
-  Durak.moves.transfer({ G: exhaustedGame, playerID: "1", events }, transferCard.id);
-  assert.equal(exhaustedGame.defender, 1);
+  ], { current: 0, defender: 0, phase: "defend", table: [attack] });
+  Durak.moves.transfer({ G: exhaustedGame, playerID: "0", events }, transferCard.id);
+  assert.equal(exhaustedGame.defender, 0);
 });
 
 test("the thief sees only their offer and can steal a selected offered card", () => {
@@ -215,6 +236,84 @@ test("the thief sees only their offer and can steal a selected offered card", ()
   assert.equal(state.players[0].hand.some((item) => item.id === stolen.id), true);
   assert.equal(state.players[1].hand.some((item) => item.id === stolen.id), false);
   assert.equal(state.players[0].thiefUses, 1);
+});
+
+test("the thief cannot target a player with one card and may decline an offer", () => {
+  const state = makeState([
+    emptyPlayer(0, "thief", [card("♠", "2", 2)]),
+    emptyPlayer(1, "paladin", [card("♦", "9", 9)]),
+    emptyPlayer(2, "paladin", [card("♥", "7", 7), card("♣", "8", 8)]),
+  ]);
+  const random = { Shuffle: (cards) => cards };
+  Durak.moves.useThief({ G: state, playerID: "0", random }, 1);
+  assert.equal(state.thiefOfferOwner, null);
+  Durak.moves.useThief({ G: state, playerID: "0", random }, 2);
+  assert.equal(state.thiefOffer.length, 2);
+  Durak.moves.declineThief({ G: state, playerID: "0" });
+  assert.equal(state.thiefOfferOwner, null);
+  assert.deepEqual(state.thiefReveal, []);
+});
+
+test("defense opens a throw-in window that accepts any rank already on the table", () => {
+  const state = makeState([
+    emptyPlayer(0, "paladin", [card("♦", "7", 7)]),
+    emptyPlayer(1, "paladin", [card("♥", "7", 7)]),
+    emptyPlayer(2, "paladin", [card("♣", "3", 3)]),
+  ], {
+    attacker: 2,
+    defender: 1,
+    current: 1,
+    phase: "defend",
+    table: [{ card: card("♥", "5", 5) }],
+    maxAttackCards: 3,
+  });
+  Durak.moves.defendWith({ G: state, playerID: "1", events }, "♥-7", "♥-5");
+  assert.equal(state.phase, "throw-in");
+  assert.equal(state.current, 0);
+  Durak.moves.throwIn({ G: state, playerID: "0", events }, ["♦-7"]);
+  assert.equal(state.table.length, 2);
+  assert.equal(state.table[1].card.rank, 7);
+  assert.equal(state.phase, "defend");
+  assert.equal(state.current, 1);
+});
+
+test("the defender can undo a defense before finishing the round", () => {
+  const defense = card("♥", "8", 8);
+  const state = makeState([
+    emptyPlayer(0),
+    emptyPlayer(1, "paladin", []),
+  ], {
+    attacker: 0,
+    defender: 1,
+    current: 1,
+    phase: "defend-ready",
+    table: [{ card: card("♥", "6", 6), defense }],
+    maxAttackCards: 1,
+  });
+  Durak.moves.undoDefense({ G: state, playerID: "1" }, "♥-6");
+  assert.equal(state.phase, "defend");
+  assert.equal(state.table[0].defense, undefined);
+  assert.deepEqual(state.players[1].hand, [defense]);
+  assert.equal(state.log.at(-1).action, "undo-defense");
+});
+
+test("when an attacker runs out of cards, a successful defense starts with the defender", () => {
+  const state = makeState([
+    emptyPlayer(0, "paladin", []),
+    emptyPlayer(1, "paladin", [card("♥", "8", 8)]),
+    emptyPlayer(2, "paladin", [card("♦", "9", 9)]),
+  ], {
+    attacker: 0,
+    defender: 1,
+    current: 1,
+    phase: "defend-ready",
+    postDefenseThrowInUsed: true,
+    table: [{ card: card("♥", "6", 6), defense: card("♥", "7", 7) }],
+    maxAttackCards: 1,
+  });
+  Durak.moves.finishDefense({ G: state, playerID: "1", events });
+  assert.equal(state.attacker, 1);
+  assert.equal(state.current, 1);
 });
 
 test("the necromancer can recover only one of the last six discard cards", () => {
@@ -243,8 +342,8 @@ test("reverse players beat only with a lower card of the same suit", () => {
     table: [{ card: card("♥", "8", 8) }],
     maxAttackCards: 1,
   });
-  Durak.moves.defendWith({ G: state, playerID: "1" }, "♦-A", "♥-8");
+  Durak.moves.defendWith({ G: state, playerID: "1", events }, "♦-A", "♥-8");
   assert.equal(state.table[0].defense, undefined);
-  Durak.moves.defendWith({ G: state, playerID: "1" }, "♥-4", "♥-8");
+  Durak.moves.defendWith({ G: state, playerID: "1", events }, "♥-4", "♥-8");
   assert.equal(state.table[0].defense.id, "♥-4");
 });
